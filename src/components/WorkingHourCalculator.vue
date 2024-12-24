@@ -40,7 +40,7 @@
 
     <div v-if="result" class="result">
       <h3>결과</h3>
-      <p>{{ result }}</p>
+      <p v-html="result"></p>
     </div>
   </div>
 </template>
@@ -87,7 +87,7 @@ export default {
   methods: {
     isHoliday(dateStr) {
       // 2024년 공휴일 목록
-      const holidays2024 = [
+      const holidays = [
         '2024-01-01', // 신정
         '2024-02-09', // 설날
         '2024-02-10', // 설날
@@ -106,8 +106,23 @@ export default {
         '2024-10-03', // 개천절
         '2024-10-09', // 한글날
         '2024-12-25', // 성탄절
+        '2025-01-01', // 신정
+        '2025-01-28', // 설날
+        '2025-01-29', // 설날
+        '2025-01-30', // 설날
+        '2025-03-03', // 대체휴일
+        '2025-05-05', // 어린이날
+        '2025-05-06', // 대체휴일
+        '2025-06-06', // 현충일
+        '2025-08-15', // 광복절
+        '2025-10-03', // 개천절
+        '2025-10-06', // 추석
+        '2025-10-07', // 추석
+        '2025-10-08', // 추석
+        '2025-10-09', // 한글날
+        '2025-12-25', // 성탄절
       ]
-      return holidays2024.includes(dateStr)
+      return holidays.includes(dateStr)
     },
 
     calculateRequiredTime() {
@@ -151,7 +166,7 @@ export default {
           }
           
           if (this.isHoliday(dateStr) && isCounted) {
-            // 공휴일인 경우 필요 근무시���에서 하루치(480분) 차감
+            // 공휴일인 경우 필요 근무시간에서 하루치(480분) 차감
             remainingMinutes -= 480
           }
         }
@@ -170,7 +185,31 @@ export default {
       const hoursPerDay = Math.floor(minutesPerDay / 60)
       const minutesRemainder = Math.round(minutesPerDay % 60)
 
-      this.result = `이번 달 목표 달성을 위해 매일 ${hoursPerDay}시간 ${minutesRemainder}분씩 근무해야 합니다.`
+      // 남은 공휴일 찾기
+      const remainingHolidays = []
+      for (let d = new Date(today); d <= lastDay; d.setDate(d.getDate() + 1)) {
+        const dateStr = new Date(d.getTime() + (9 * 60 * 60 * 1000))
+          .toISOString()
+          .split('T')[0]
+        if (this.isHoliday(dateStr)) {
+          const holidayDate = new Date(dateStr)
+          const month = holidayDate.getMonth() + 1
+          const day = holidayDate.getDate()
+          remainingHolidays.push(`${month}월 ${day}일`)
+        }
+      }
+
+      // 연차 정보 문자열 생성
+      const leaveInfo = []
+      if (this.fullDayLeave > 0) leaveInfo.push(`연차 ${this.fullDayLeave}일`)
+      if (this.halfDayLeave > 0) leaveInfo.push(`반차 ${this.halfDayLeave}회`)
+      if (this.quarterDayLeave > 0) leaveInfo.push(`반반차 ${this.quarterDayLeave}회`)
+      
+      const holidayText = remainingHolidays.length > 0 
+        ? `\n\n이번 달 남은 공휴일: ${remainingHolidays.join(',')}`
+        : `\n\n이번 달 남은 공휴일이 없습니다.`
+
+      this.result = `${today.getFullYear()}년 ${today.getMonth() + 1}월 목표 달성을 위해 \n오늘을 포함하여 남은 <strong>${remainingWorkdays} 근무일</strong> 동안\n매일 <strong>${hoursPerDay}시간 ${minutesRemainder}분</strong>씩 근무해야 합니다.${holidayText}`
     }
   }
 }
@@ -238,5 +277,6 @@ input[type="number"] {
   padding: 15px;
   background-color: #f8f9fa;
   border-radius: 4px;
+  white-space: pre-line;
 }
 </style> 
