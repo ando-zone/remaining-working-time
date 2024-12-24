@@ -35,6 +35,14 @@
         </div>
       </div>
     </div>
+    <div class="include-today" style="margin-bottom: 20px">
+      <label>
+        <input 
+          type="checkbox" 
+          v-model="includeToday"
+        > 오늘 포함하여 계산하기
+      </label>
+    </div>
 
     <button @click="calculateRequiredTime" class="calculate-btn">계산하기</button>
 
@@ -57,6 +65,7 @@ export default {
       fullDayLeave: Number(localStorage.getItem('fullDayLeave')) || 0,
       halfDayLeave: Number(localStorage.getItem('halfDayLeave')) || 0,
       quarterDayLeave: Number(localStorage.getItem('quarterDayLeave')) || 0,
+      includeToday: true,
       result: '',
     }
   },
@@ -181,7 +190,8 @@ export default {
       }
 
       // 하루 평균 근무해야 할 시간 계산
-      const minutesPerDay = remainingMinutes / remainingWorkdays
+      const actualWorkdays = this.includeToday ? remainingWorkdays : remainingWorkdays - 1
+      const minutesPerDay = remainingMinutes / actualWorkdays
       const hoursPerDay = Math.floor(minutesPerDay / 60)
       const minutesRemainder = Math.round(minutesPerDay % 60)
 
@@ -209,7 +219,7 @@ export default {
         ? `\n\n이번 달 남은 공휴일: ${remainingHolidays.join(',')}`
         : `\n\n이번 달 남은 공휴일이 없습니다.`
 
-      this.result = `${today.getFullYear()}년 ${today.getMonth() + 1}월 목표 달성을 위해 \n오늘을 포함하여 남은 <strong>${remainingWorkdays} 근무일</strong> 동안\n매일 <strong>${hoursPerDay}시간 ${minutesRemainder}분</strong>씩 근무해야 합니다.${holidayText}`
+      this.result = `${today.getFullYear()}년 ${today.getMonth() + 1}월 목표 달성을 위해 \n오늘을 포함하여 남은 <strong>${actualWorkdays} 근무일</strong> 동안\n매일 <strong>${hoursPerDay}시간 ${minutesRemainder}분</strong>씩 근무해야 합니다.${holidayText}`
     }
   }
 }
