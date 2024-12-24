@@ -185,7 +185,7 @@ export default {
       console.log(remainingMinutes)
 
       if (remainingWorkdays === 0) {
-        this.result = '이번 달 남은 영업일이 없습니다.'
+        this.result = '이번 달 남은 근무일이 없습니다.'
         return
       }
 
@@ -219,7 +219,9 @@ export default {
         ? `\n\n이번 달 남은 공휴일: ${remainingHolidays.join(',')}`
         : `\n\n이번 달 남은 공휴일이 없습니다.`
 
-      this.result = `${today.getFullYear()}년 ${today.getMonth() + 1}월 목표 달성을 위해 \n오늘을 포함하여 남은 <strong>${actualWorkdays} 근무일</strong> 동안\n매일 <strong>${hoursPerDay}시간 ${minutesRemainder}분</strong>씩 근무해야 합니다.${holidayText}`
+      const includeTodayText = this.includeToday ? '오늘을 포함하여' : ''
+
+      this.result = `${today.getFullYear()}년 ${today.getMonth() + 1}월 목표 달성을 위해 \n${includeTodayText} 남은 <strong>${actualWorkdays} 근무일</strong> 동안\n매일 <strong>${hoursPerDay}시간 ${minutesRemainder}분</strong>씩 근무해야 합니다.${holidayText}`
     }
   }
 }
