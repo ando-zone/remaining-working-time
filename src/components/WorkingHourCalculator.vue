@@ -50,6 +50,20 @@
       <h3>결과</h3>
       <p v-html="result"></p>
     </div>
+
+    <!-- 업데이트 기록 섹션 -->
+    <div class="update-history mt-8 p-4 bg-gray-100 rounded-lg">
+      <h3 class="text-lg font-semibold mb-4">업데이트 기록</h3>
+      <ul class="list-disc pl-5 space-y-2">
+        <li>2024.12.26 - 초기 버전 출시</li>
+        <li>2024.12.27 - '연차 제외하기' 기능 오류 수정 + 오늘 날짜를 UTC가 아닌 KST 기준으로 수정</li>
+      </ul>
+      
+      <!-- 경고 문구 추가 -->
+      <div class="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded text-sm text-yellow-800">
+        ⚠️ 본 계산기의 결과는 참고용으로만 사용해 주세요. 혹시 부정확한 계산 결과 발견 시, dohyeon.an@kakao.com으로 연락 부탁드립니다 :)
+      </div>
+    </div>
   </div>
 </template>
 
@@ -146,7 +160,11 @@ export default {
       
       // 현재 날짜 설정 (한국 시간)
       const today = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }))
-      const currentDate = today.toISOString().split('T')[0]
+      const currentDate = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+        .toLocaleDateString('fr-CA')  // YYYY-MM-DD 형식으로 반환
+      
+      console.log(today)
+      console.log(currentDate)
       
       // 해당 달의 첫째 날과 마지막 날 계산 (한국 시간 기준)
       const firstDay = new Date(today.getFullYear(), today.getMonth(), 1)
@@ -155,7 +173,7 @@ export default {
       // 남은 영업일 계산
       let remainingWorkdays = 0
       let isCounted = false
-      let remainingMinutes = targetMinutesTotal - workedMinutesTotal - leaveMinutes
+      let remainingMinutes = targetMinutesTotal - workedMinutesTotal + leaveMinutes
 
       for (let d = firstDay; d <= lastDay; d.setDate(d.getDate() + 1)) {
         const dateStr = new Date(d.getTime() + (9 * 60 * 60 * 1000))
