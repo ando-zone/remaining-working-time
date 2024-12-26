@@ -51,6 +51,9 @@
       <p v-html="result"></p>
     </div>
 
+    <!-- 구분선 추가 -->
+    <hr class="my-8 border-gray-200">
+    
     <!-- 업데이트 기록 섹션 -->
     <div class="update-history mt-8 p-4 bg-gray-100 rounded-lg">
       <h3 class="text-lg font-semibold mb-4">업데이트 기록</h3>
