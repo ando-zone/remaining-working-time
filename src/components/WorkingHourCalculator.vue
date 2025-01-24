@@ -213,17 +213,25 @@ export default {
       console.log(remainingWorkdays)
       console.log(remainingMinutes)
 
-      if (remainingWorkdays <= 0 || remainingMinutes <= 0) {
-        const message = '🎉 목표를 이미 달성하셨습니다!'
-        this.result = ''  // 결과를 잠시 비웠다가
-        setTimeout(() => {  // 다음 틱에 다시 설정
+      const actualWorkdays = this.includeToday ? remainingWorkdays : remainingWorkdays - 1
+
+      if (actualWorkdays <= 0) {
+        let message = ''
+        if (remainingMinutes <= 0) {
+          message = '🎉 목표를 이미 달성하셨습니다!'
+        } else {
+          const remainingHours = Math.floor(remainingMinutes / 60)
+          const remainingMins = Math.round(remainingMinutes % 60)
+          message = `❌ 남은 근무일이 없어 목표 달성이 불가능합니다.\n(부족한 근무 시간: ${remainingHours}시간 ${remainingMins}분)`
+        }
+        this.result = ''
+        setTimeout(() => {
           this.result = message
         }, 0)
         return
       }
 
       // 하루 평균 근무해야 할 시간 계산
-      const actualWorkdays = this.includeToday ? remainingWorkdays : remainingWorkdays - 1
       const minutesPerDay = remainingMinutes / actualWorkdays
       const hoursPerDay = Math.floor(minutesPerDay / 60)
       const minutesRemainder = Math.round(minutesPerDay % 60)
