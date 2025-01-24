@@ -40,7 +40,7 @@
         <input 
           type="checkbox" 
           v-model="includeToday"
-        > 오늘 포함하여 계산하기
+        > 오늘 포함하여 계산 (퇴근 찍기 전이면 체크!)
       </label>
     </div>
 
