@@ -215,7 +215,7 @@ export default {
 
       const actualWorkdays = this.includeToday ? remainingWorkdays : remainingWorkdays - 1
 
-      if (actualWorkdays <= 0) {
+      if (actualWorkdays <= 0 || remainingMinutes <= 0) {
         let message = ''
         if (remainingMinutes <= 0) {
           message = '🎉 목표를 이미 달성하셨습니다!'
