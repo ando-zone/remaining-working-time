@@ -19,7 +19,7 @@
     </div>
 
     <div class="input-group">
-      <h3>누적 근무시간에 이미 포함된 연차 제외하기 (사용 예정인 연차만)</h3>
+      <h3>이미 결재된 사용 예정 연차가 있는 경우 아래에 꼭 입력해 주세요!</h3>
       <div class="leave-input">
         <div>
           <label>연차:</label>
@@ -46,10 +46,12 @@
 
     <button @click="calculateRequiredTime" class="calculate-btn">계산하기</button>
 
-    <div v-if="result" class="result">
-      <h3>결과</h3>
-      <p v-html="result"></p>
-    </div>
+    <Transition name="flash">
+      <div v-if="result" :key="animationKey" class="result">
+        <h3>결과</h3>
+        <p v-html="result"></p>
+      </div>
+    </Transition>
 
     <!-- 구분선 추가 -->
     <hr class="my-8 border-gray-200">
@@ -61,6 +63,7 @@
         <li>2024.12.26 - 초기 버전 출시</li>
         <li>2024.12.27 - '연차 제외하기' 기능 오류 수정 + 오늘 날짜를 UTC가 아닌 KST 기준으로 수정</li>
         <li>2025.01.08 - 임시 공휴일 지정으로 인한, 공휴일 목록 수정</li>
+        <li>2025.01.24 - 안내 문구 변경/ 연차,반차,반반차 계산 방식 변경/ 근무 목표 달성 조건 보완/ 결과창 깜빡임 애니메이션 추가</li>
       </ul>
       
       <!-- 경고 문구 추가 -->
@@ -154,6 +157,8 @@ export default {
     },
 
     calculateRequiredTime() {
+      this.animationKey += 1  // 계산할 때마다 key 값을 증가시킴
+      
       // 목표 시간을 분으로 변환
       const targetMinutesTotal = (this.targetHours * 60) + Number(this.targetMinutes)
       
@@ -161,7 +166,8 @@ export default {
       const workedMinutesTotal = (this.workedHours * 60) + Number(this.workedMinutes)
       
       // 휴가 시간 계산 (8시간 근무 기준)
-      const leaveMinutes = (this.fullDayLeave * 480) + (this.halfDayLeave * 240) + (this.quarterDayLeave * 120)
+      const leaveMinutes = (this.halfDayLeave * 240) + (this.quarterDayLeave * 120)
+      const leaveDays = (this.fullDayLeave * 1)
       
       // 현재 날짜 설정 (한국 시간)
       const today = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }))
@@ -176,7 +182,7 @@ export default {
       const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0)
 
       // 남은 영업일 계산
-      let remainingWorkdays = 0
+      let remainingWorkdays = 0 - leaveDays
       let isCounted = false
       let remainingMinutes = targetMinutesTotal - workedMinutesTotal + leaveMinutes
 
@@ -207,8 +213,12 @@ export default {
       console.log(remainingWorkdays)
       console.log(remainingMinutes)
 
-      if (remainingWorkdays === 0) {
-        this.result = '이번 달 남은 근무일이 없습니다.'
+      if (remainingWorkdays <= 0 || remainingMinutes <= 0) {
+        const message = '🎉 목표를 이미 달성하셨습니다!'
+        this.result = ''  // 결과를 잠시 비웠다가
+        setTimeout(() => {  // 다음 틱에 다시 설정
+          this.result = message
+        }, 0)
         return
       }
 
@@ -244,7 +254,12 @@ export default {
 
       const includeTodayText = this.includeToday ? '오늘을 포함하여' : ''
 
-      this.result = `${today.getFullYear()}년 ${today.getMonth() + 1}월 목표 달성을 위해 \n${includeTodayText} 남은 <strong>${actualWorkdays} 근무일</strong> 동안\n매일 <strong>${hoursPerDay}시간 ${minutesRemainder}분</strong>씩 근무해야 합니다.${holidayText}`
+      const resultMessage = `${today.getFullYear()}년 ${today.getMonth() + 1}월 목표 달성을 위해 \n${includeTodayText} 남은 <strong>${actualWorkdays} 근무일</strong> 동안\n매일 <strong>${hoursPerDay}시간 ${minutesRemainder}분</strong>씩 근무해야 합니다.${holidayText}`
+      
+      this.result = ''  // 결과를 잠시 비웠다가
+      setTimeout(() => {  // 다음 틱에 다시 설정
+        this.result = resultMessage
+      }, 0)
     }
   }
 }
@@ -307,11 +322,42 @@ input[type="number"] {
   background-color: #45a049;
 }
 
+.flash-enter-active {
+  animation: flash 1s;
+  position: relative;  /* 위치 고정 */
+}
+
+.flash-enter-from,
+.flash-leave-to {
+  position: absolute;  /* 이전 요소를 문서 흐름에서 제거 */
+  opacity: 0;
+  width: 100%;
+  pointer-events: none;
+}
+
+.flash-leave-active {
+  display: none;  /* 떠나는 요소 완전히 숨김 */
+}
+
+@keyframes flash {
+  0% {
+    opacity: 0.5;
+    background-color: #e9ecef;
+  }
+  100% {
+    opacity: 1;
+    background-color: #f8f9fa;
+  }
+}
+
 .result {
   margin-top: 20px;
   padding: 15px;
   background-color: #f8f9fa;
   border-radius: 4px;
   white-space: pre-line;
+  position: relative;  /* 위치 고정 */
+  width: 100%;  /* 너비 설정 */
+  overflow: hidden;  /* 넘치는 내용 숨김 */
 }
 </style> 
