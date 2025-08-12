@@ -1,6 +1,11 @@
 <template>
   <div class="calculator-container">
-    <h2>포그리트 식구들을 위한 근무시간 계산기</h2>
+    <div class="header-section">
+      <h2>포그리트 식구들을 위한 근무시간 계산기</h2>
+      <div class="visitor-count">
+        <span>누적 방문자 수: {{ visitorCount.toLocaleString() }}명</span>
+      </div>
+    </div>
     
     <div class="input-group">
       <h3>이번 달 목표 근무시간</h3>
@@ -75,6 +80,8 @@
 </template>
 
 <script>
+import { supabase } from '../supabase.js'
+
 export default {
   name: 'WorkingHourCalculator',
   data() {
@@ -88,7 +95,13 @@ export default {
       quarterDayLeave: Number(localStorage.getItem('quarterDayLeave')) || 0,
       includeToday: true,
       result: '',
+      animationKey: 0,
+      visitorCount: 0,
     }
+  },
+  async mounted() {
+    await this.trackVisitor()
+    await this.getTotalVisitors()
   },
   watch: {
     // 각 입력값이 변경될 때마다 localStorage에 저장
@@ -154,6 +167,43 @@ export default {
         '2025-12-25', // 성탄절
       ]
       return holidays.includes(dateStr)
+    },
+
+    async trackVisitor() {
+      const today = new Date().toLocaleDateString('ko-KR')
+      const lastVisitDate = localStorage.getItem('lastVisitDate')
+      
+      if (lastVisitDate !== today) {
+        try {
+          const { error } = await supabase.rpc('increment_daily_visitors')
+          if (error) {
+            console.error('방문자 추적 오류:', error)
+          } else {
+            console.log('새로운 방문자가 추가되었습니다.')
+            localStorage.setItem('lastVisitDate', today)
+          }
+        } catch (error) {
+          console.error('방문자 추적 실패:', error)
+        }
+      } else {
+        console.log('오늘 이미 방문 기록됨')
+      }
+    },
+
+    async getTotalVisitors() {
+      try {
+        const { data, error } = await supabase
+          .from('visitors')
+          .select('visitor_count')
+          
+        if (error) {
+          console.error('총 방문자 수 조회 오류:', error)
+        } else {
+          this.visitorCount = data.reduce((total, row) => total + row.visitor_count, 0)
+        }
+      } catch (error) {
+        console.error('총 방문자 수 조회 실패:', error)
+      }
     },
 
     calculateRequiredTime() {
@@ -278,6 +328,22 @@ export default {
   max-width: 500px;
   margin: 0 auto;
   padding: 20px;
+}
+
+.header-section {
+  text-align: center;
+  margin-bottom: 30px;
+}
+
+.visitor-count {
+  margin-top: 10px;
+  padding: 8px 16px;
+  background-color: #e3f2fd;
+  border-radius: 20px;
+  display: inline-block;
+  color: #1976d2;
+  font-size: 14px;
+  font-weight: bold;
 }
 
 .input-group {
