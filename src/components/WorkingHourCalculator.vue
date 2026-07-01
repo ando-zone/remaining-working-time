@@ -2,9 +2,68 @@
   <div class="calculator-container">
     <div class="header-section">
       <h2>포그리트 식구들을 위한 근무시간 계산기</h2>
-      <div class="visitor-count">
-        <span>누적 방문자 수: {{ visitorCount.toLocaleString() }}명</span>
+    </div>
+
+    <!-- 이번 달 공휴일 미리보기 -->
+    <div class="holiday-preview">
+      <div class="holiday-panel-header">
+        <h4>📅 이번 달 공휴일 현황</h4>
+        <span>{{ currentMonthName }} 기준</span>
       </div>
+      <div v-if="currentMonthHolidays.length > 0" class="holiday-list">
+        <span
+          v-for="holiday in currentMonthHolidays"
+          :key="holiday.date"
+          class="holiday-tag"
+          :class="{ 'custom-holiday': holiday.source === 'custom' }"
+        >
+          {{ holiday.displayDate }} ({{ holiday.name }})
+          <button
+            type="button"
+            class="holiday-remove-btn"
+            :aria-label="`${holiday.displayDate} ${holiday.name} 제외`"
+            @click="removeHoliday(holiday)"
+          >
+            ×
+          </button>
+        </span>
+      </div>
+      <div v-else class="no-holiday">
+        이번 달에는 공휴일이 없습니다.
+      </div>
+
+      <form class="holiday-form" @submit.prevent="addCustomHoliday">
+        <input
+          type="date"
+          v-model="customHolidayDate"
+          :min="currentMonthStart"
+          :max="currentMonthEnd"
+        >
+        <input
+          type="text"
+          v-model="customHolidayName"
+          placeholder="공휴일 이름"
+        >
+        <button type="submit">추가</button>
+      </form>
+
+      <div v-if="currentMonthExcludedHolidays.length > 0" class="excluded-holidays">
+        <span
+          v-for="holiday in currentMonthExcludedHolidays"
+          :key="holiday.date"
+          class="excluded-holiday"
+        >
+          {{ formatHolidayDisplay(holiday.date) }} 제외됨
+          <button type="button" @click="restoreHoliday(holiday.date)">복원</button>
+        </span>
+      </div>
+
+      <p class="holiday-source">
+        기본 공휴일은 앱에 내장된 2024~2026년 데이터 기준입니다.
+      </p>
+      <p class="holiday-report">
+        ※ 공휴일 현황이 실제와 다르면 위에서 직접 추가하거나 제외해 주세요.
+      </p>
     </div>
     
     <div class="input-group">
@@ -24,7 +83,7 @@
     </div>
 
     <div class="input-group">
-      <h3>이미 결재된 사용 예정 연차가 있는 경우 아래에 꼭 입력해 주세요!</h3>
+      <h3><span class="highlight-red">이미 결재된</span> 사용 예정 연차가 있는 경우 아래에 꼭 입력해 주세요!</h3>
       <div class="leave-input">
         <div>
           <label>연차:</label>
@@ -69,6 +128,8 @@
         <li>2024.12.27 - '연차 제외하기' 기능 오류 수정 + 오늘 날짜를 UTC가 아닌 KST 기준으로 수정</li>
         <li>2025.01.08 - 임시 공휴일 지정으로 인한, 공휴일 목록 수정</li>
         <li>2025.01.24 - 안내 문구 변경/ 연차,반차,반반차 계산 방식 변경/ 근무 목표 달성 조건 보완/ 결과창 깜빡임 애니메이션 추가</li>
+        <li>2025.12.20 - 이번 달 공휴일 미리보기 추가/ 공휴일 데이터 외부 라이브러리 연동(2026년까지 지원)/ 주말·공휴일에 '오늘 포함하기' 체크 해제 시 버그 수정/ 방문자 수 기능 제거</li>
+        <li>2026.07.01 - 외부 공휴일 라이브러리 제거/ 기본 공휴일 내장/ 공휴일 직접 추가·제외 기능 추가</li>
       </ul>
       
       <!-- 경고 문구 추가 -->
@@ -80,11 +141,40 @@
 </template>
 
 <script>
-import { supabase } from '../supabase.js'
+import holidayUtils from '../holidays.js'
+
+const {
+  DEFAULT_HOLIDAYS,
+  buildEffectiveHolidays,
+  filterHolidaysByMonth,
+  findHoliday,
+  formatYearMonth,
+  isHolidayDate,
+  normalizeHolidayName,
+  parseExcludedHolidayDates,
+  parseHolidayList,
+} = holidayUtils
+
+const CUSTOM_HOLIDAYS_KEY = 'customHolidays'
+const EXCLUDED_HOLIDAYS_KEY = 'excludedHolidays'
+
+function getKstToday() {
+  return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }))
+}
+
+function formatDate(date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+
+  return `${year}-${month}-${day}`
+}
 
 export default {
   name: 'WorkingHourCalculator',
   data() {
+    const today = getKstToday()
+
     return {
       targetHours: Number(localStorage.getItem('targetHours')) || 0,
       targetMinutes: Number(localStorage.getItem('targetMinutes')) || 0,
@@ -96,12 +186,46 @@ export default {
       includeToday: true,
       result: '',
       animationKey: 0,
-      visitorCount: 0,
+      customHolidays: parseHolidayList(localStorage.getItem(CUSTOM_HOLIDAYS_KEY)),
+      excludedHolidayDates: parseExcludedHolidayDates(localStorage.getItem(EXCLUDED_HOLIDAYS_KEY)),
+      customHolidayDate: formatDate(today),
+      customHolidayName: '',
     }
   },
-  async mounted() {
-    await this.trackVisitor()
-    await this.getTotalVisitors()
+  computed: {
+    currentYear() {
+      return getKstToday().getFullYear()
+    },
+    currentMonth() {
+      return getKstToday().getMonth() + 1
+    },
+    currentMonthName() {
+      return formatYearMonth(this.currentYear, this.currentMonth)
+    },
+    currentMonthStart() {
+      return `${this.currentYear}-${String(this.currentMonth).padStart(2, '0')}-01`
+    },
+    currentMonthEnd() {
+      return formatDate(new Date(this.currentYear, this.currentMonth, 0))
+    },
+    effectiveHolidays() {
+      return buildEffectiveHolidays(
+        DEFAULT_HOLIDAYS,
+        this.customHolidays,
+        this.excludedHolidayDates
+      )
+    },
+    currentMonthHolidays() {
+      return filterHolidaysByMonth(this.effectiveHolidays, this.currentYear, this.currentMonth)
+        .map((holiday) => ({
+          ...holiday,
+          displayDate: this.formatHolidayDisplay(holiday.date),
+        }))
+    },
+    currentMonthExcludedHolidays() {
+      return filterHolidaysByMonth(DEFAULT_HOLIDAYS, this.currentYear, this.currentMonth)
+        .filter((holiday) => this.excludedHolidayDates.includes(holiday.date))
+    }
   },
   watch: {
     // 각 입력값이 변경될 때마다 localStorage에 저장
@@ -129,81 +253,60 @@ export default {
   },
   methods: {
     isHoliday(dateStr) {
-      // 2024년 공휴일 목록
-      const holidays = [
-        '2024-01-01', // 신정
-        '2024-02-09', // 설날
-        '2024-02-10', // 설날
-        '2024-02-11', // 설날
-        '2024-02-12', // 대체공휴일
-        '2024-03-01', // 삼일절
-        '2024-04-10', // 국회의원선거
-        '2024-05-05', // 어린이날
-        '2024-05-06', // 대체공휴일
-        '2024-05-15', // 부처님오신날
-        '2024-06-06', // 현충일
-        '2024-08-15', // 광복절
-        '2024-09-16', // 추석
-        '2024-09-17', // 추석
-        '2024-09-18', // 추석
-        '2024-10-03', // 개천절
-        '2024-10-09', // 한글날
-        '2024-12-25', // 성탄절
-        '2025-01-01', // 신정
-        '2025-01-27', // 임시공휴일
-        '2025-01-28', // 설날
-        '2025-01-29', // 설날
-        '2025-01-30', // 설날
-        '2025-03-03', // 대체휴일
-        '2025-05-05', // 어린이날
-        '2025-05-06', // 대체휴일
-        '2025-06-06', // 현충일
-        '2025-08-15', // 광복절
-        '2025-10-03', // 개천절
-        '2025-10-06', // 추석
-        '2025-10-07', // 추석
-        '2025-10-08', // 추석
-        '2025-10-09', // 한글날
-        '2025-12-25', // 성탄절
-      ]
-      return holidays.includes(dateStr)
+      return isHolidayDate(dateStr, this.effectiveHolidays)
     },
 
-    async trackVisitor() {
-      const today = new Date().toLocaleDateString('ko-KR')
-      const lastVisitDate = localStorage.getItem('lastVisitDate')
-      
-      if (lastVisitDate !== today) {
-        try {
-          const { error } = await supabase.rpc('increment_daily_visitors')
-          if (error) {
-            console.error('방문자 추적 오류:', error)
-          } else {
-            console.log('새로운 방문자가 추가되었습니다.')
-            localStorage.setItem('lastVisitDate', today)
-          }
-        } catch (error) {
-          console.error('방문자 추적 실패:', error)
-        }
-      } else {
-        console.log('오늘 이미 방문 기록됨')
-      }
+    findHolidayName(dateStr) {
+      const holiday = findHoliday(dateStr, this.effectiveHolidays)
+
+      return holiday ? holiday.name : ''
     },
 
-    async getTotalVisitors() {
-      try {
-        const { data, error } = await supabase
-          .from('visitors')
-          .select('visitor_count')
-          
-        if (error) {
-          console.error('총 방문자 수 조회 오류:', error)
-        } else {
-          this.visitorCount = data.reduce((total, row) => total + row.visitor_count, 0)
-        }
-      } catch (error) {
-        console.error('총 방문자 수 조회 실패:', error)
+    formatHolidayDisplay(dateStr) {
+      const [, month, day] = dateStr.split('-')
+
+      return `${Number(month)}월 ${Number(day)}일`
+    },
+
+    saveHolidayOverrides() {
+      localStorage.setItem(CUSTOM_HOLIDAYS_KEY, JSON.stringify(this.customHolidays))
+      localStorage.setItem(EXCLUDED_HOLIDAYS_KEY, JSON.stringify(this.excludedHolidayDates))
+    },
+
+    addCustomHoliday() {
+      const holiday = {
+        date: this.customHolidayDate,
+        name: normalizeHolidayName(this.customHolidayName),
+        source: 'custom',
       }
+
+      this.customHolidays = [
+        ...this.customHolidays.filter((item) => item.date !== holiday.date),
+        holiday,
+      ].sort((left, right) => left.date.localeCompare(right.date))
+
+      this.excludedHolidayDates = this.excludedHolidayDates
+        .filter((date) => date !== holiday.date)
+
+      this.customHolidayName = ''
+      this.saveHolidayOverrides()
+    },
+
+    removeHoliday(holiday) {
+      if (holiday.source === 'custom') {
+        this.customHolidays = this.customHolidays
+          .filter((item) => item.date !== holiday.date)
+      } else if (!this.excludedHolidayDates.includes(holiday.date)) {
+        this.excludedHolidayDates = [...this.excludedHolidayDates, holiday.date].sort()
+      }
+
+      this.saveHolidayOverrides()
+    },
+
+    restoreHoliday(dateStr) {
+      this.excludedHolidayDates = this.excludedHolidayDates
+        .filter((date) => date !== dateStr)
+      this.saveHolidayOverrides()
     },
 
     calculateRequiredTime() {
@@ -220,12 +323,8 @@ export default {
       const leaveDays = (this.fullDayLeave * 1)
       
       // 현재 날짜 설정 (한국 시간)
-      const today = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }))
-      const currentDate = new Date(today.getFullYear(), today.getMonth(), today.getDate())
-        .toLocaleDateString('fr-CA')  // YYYY-MM-DD 형식으로 반환
-      
-      console.log(today)
-      console.log(currentDate)
+      const today = getKstToday()
+      const currentDate = formatDate(today)
       
       // 해당 달의 첫째 날과 마지막 날 계산 (한국 시간 기준)
       const firstDay = new Date(today.getFullYear(), today.getMonth(), 1)
@@ -237,9 +336,7 @@ export default {
       let remainingMinutes = targetMinutesTotal - workedMinutesTotal + leaveMinutes
 
       for (let d = firstDay; d <= lastDay; d.setDate(d.getDate() + 1)) {
-        const dateStr = new Date(d.getTime() + (9 * 60 * 60 * 1000))
-          .toISOString()
-          .split('T')[0]
+        const dateStr = formatDate(d)
         
         // 현재 날짜부터 카운트 시작
         if (dateStr === currentDate) {
@@ -260,10 +357,11 @@ export default {
         }
       }
       
-      console.log(remainingWorkdays)
-      console.log(remainingMinutes)
+      // 오늘이 근무일인지 확인 (평일이고 공휴일이 아닌 경우)
+      const isTodayWorkday = today.getDay() !== 0 && today.getDay() !== 6 && !this.isHoliday(currentDate)
 
-      const actualWorkdays = this.includeToday ? remainingWorkdays : remainingWorkdays - 1
+      // 오늘이 근무일일 때만 체크박스 적용
+      const actualWorkdays = (this.includeToday || !isTodayWorkday) ? remainingWorkdays : remainingWorkdays - 1
 
       if (actualWorkdays <= 0 || remainingMinutes <= 0) {
         let message = ''
@@ -289,23 +387,14 @@ export default {
       // 남은 공휴일 찾기
       const remainingHolidays = []
       for (let d = new Date(today); d <= lastDay; d.setDate(d.getDate() + 1)) {
-        const dateStr = new Date(d.getTime() + (9 * 60 * 60 * 1000))
-          .toISOString()
-          .split('T')[0]
+        const dateStr = formatDate(d)
         if (this.isHoliday(dateStr)) {
-          const holidayDate = new Date(dateStr)
-          const month = holidayDate.getMonth() + 1
-          const day = holidayDate.getDate()
-          remainingHolidays.push(`${month}월 ${day}일`)
+          const holidayName = this.findHolidayName(dateStr)
+          const suffix = holidayName ? ` (${holidayName})` : ''
+          remainingHolidays.push(`${this.formatHolidayDisplay(dateStr)}${suffix}`)
         }
       }
 
-      // 연차 정보 문자열 생성
-      const leaveInfo = []
-      if (this.fullDayLeave > 0) leaveInfo.push(`연차 ${this.fullDayLeave}일`)
-      if (this.halfDayLeave > 0) leaveInfo.push(`반차 ${this.halfDayLeave}회`)
-      if (this.quarterDayLeave > 0) leaveInfo.push(`반반차 ${this.quarterDayLeave}회`)
-      
       const holidayText = remainingHolidays.length > 0 
         ? `\n\n이번 달 남은 공휴일: ${remainingHolidays.join(',')}`
         : `\n\n이번 달 남은 공휴일이 없습니다.`
@@ -332,17 +421,149 @@ export default {
 
 .header-section {
   text-align: center;
-  margin-bottom: 30px;
+  margin-bottom: 20px;
 }
 
-.visitor-count {
-  margin-top: 10px;
-  padding: 8px 16px;
-  background-color: #e3f2fd;
-  border-radius: 20px;
-  display: inline-block;
+.holiday-preview {
+  background-color: #f0f7ff;
+  border: 1px solid #b3d4fc;
+  border-radius: 8px;
+  padding: 15px;
+  margin-bottom: 25px;
+}
+
+.holiday-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.holiday-panel-header h4 {
+  margin: 0;
+  color: #1565c0;
+  font-size: 15px;
+}
+
+.holiday-panel-header span {
+  color: #4f6f8f;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.holiday-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.holiday-tag {
+  background-color: #fff;
+  border: 1px solid #90caf9;
+  border-radius: 16px;
+  padding: 4px 12px;
+  font-size: 13px;
   color: #1976d2;
+}
+
+.custom-holiday {
+  border-color: #66bb6a;
+  color: #2e7d32;
+}
+
+.holiday-remove-btn {
+  margin-left: 6px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
   font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.no-holiday {
+  color: #666;
+  font-size: 14px;
+  margin-bottom: 10px;
+}
+
+.holiday-form {
+  display: grid;
+  grid-template-columns: 140px 1fr 54px;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.holiday-form input {
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid #b3d4fc;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.holiday-form button,
+.excluded-holiday button {
+  border: 1px solid #90caf9;
+  border-radius: 4px;
+  background-color: #fff;
+  color: #1565c0;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.excluded-holidays {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.excluded-holiday {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px dashed #b0bec5;
+  border-radius: 4px;
+  color: #607d8b;
+  font-size: 12px;
+}
+
+.holiday-source {
+  margin: 0 0 6px 0;
+  font-size: 11px;
+  color: #888;
+}
+
+.holiday-source a {
+  color: #1976d2;
+  text-decoration: none;
+}
+
+.holiday-source a:hover {
+  text-decoration: underline;
+}
+
+.holiday-report {
+  margin: 0;
+  font-size: 12px;
+  color: #666;
+}
+
+.holiday-report a {
+  color: #1976d2;
+  text-decoration: underline;
+}
+
+.highlight-red {
+  color: #e53935;
   font-weight: bold;
 }
 
@@ -383,17 +604,28 @@ input[type="number"] {
 }
 
 .calculate-btn {
-  background-color: #4CAF50;
+  width: 100%;
+  background: linear-gradient(135deg, #4CAF50 0%, #43a047 100%);
   color: white;
-  padding: 10px 20px;
+  padding: 16px 24px;
   border: none;
-  border-radius: 4px;
+  border-radius: 12px;
   cursor: pointer;
-  font-size: 16px;
+  font-size: 18px;
+  font-weight: 600;
+  box-shadow: 0 4px 14px rgba(76, 175, 80, 0.4);
+  transition: all 0.3s ease;
 }
 
 .calculate-btn:hover {
-  background-color: #45a049;
+  background: linear-gradient(135deg, #43a047 0%, #388e3c 100%);
+  box-shadow: 0 6px 20px rgba(76, 175, 80, 0.5);
+  transform: translateY(-2px);
+}
+
+.calculate-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(76, 175, 80, 0.4);
 }
 
 .flash-enter-active {
@@ -430,8 +662,8 @@ input[type="number"] {
   background-color: #f8f9fa;
   border-radius: 4px;
   white-space: pre-line;
-  position: relative;  /* 위치 고정 */
-  width: 100%;  /* 너비 설정 */
-  overflow: hidden;  /* 넘치는 내용 숨김 */
+  position: relative;
+  box-sizing: border-box;
+  overflow: hidden;
 }
-</style> 
+</style>
