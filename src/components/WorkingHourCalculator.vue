@@ -69,8 +69,15 @@
     <div class="input-group">
       <h3>이번 달 목표 근무시간</h3>
       <div class="time-input">
-        <input type="number" v-model="targetHours" min="0"> 시간
-        <input type="number" v-model="targetMinutes" min="0" max="59"> 분
+        <input type="number" v-model="targetHours" min="0" @input="markManualTargetTime"> 시간
+        <input type="number" v-model="targetMinutes" min="0" max="59" @input="markManualTargetTime"> 분
+      </div>
+      <div class="target-helper">
+        <span>
+          자동 계산값: {{ autoTargetTimeLabel }}
+          <small>(주 40시간 ÷ 7일 × {{ currentMonthDays }}일)</small>
+        </span>
+        <button type="button" @click="applyAutoTargetTime">자동값 입력</button>
       </div>
     </div>
 
@@ -130,6 +137,7 @@
         <li>2025.01.24 - 안내 문구 변경/ 연차,반차,반반차 계산 방식 변경/ 근무 목표 달성 조건 보완/ 결과창 깜빡임 애니메이션 추가</li>
         <li>2025.12.20 - 이번 달 공휴일 미리보기 추가/ 공휴일 데이터 외부 라이브러리 연동(2026년까지 지원)/ 주말·공휴일에 '오늘 포함하기' 체크 해제 시 버그 수정/ 방문자 수 기능 제거</li>
         <li>2026.07.01 - 외부 공휴일 라이브러리 제거/ 기본 공휴일 내장/ 공휴일 직접 추가·제외 기능 추가</li>
+        <li>2026.07.01 - 월 목표 근무시간 자동 계산 및 수동 수정 기능 추가</li>
       </ul>
       
       <!-- 경고 문구 추가 -->
@@ -142,6 +150,7 @@
 
 <script>
 import holidayUtils from '../holidays.js'
+import workTimeUtils from '../work-time.js'
 
 const {
   DEFAULT_HOLIDAYS,
@@ -155,8 +164,16 @@ const {
   parseHolidayList,
 } = holidayUtils
 
+const {
+  calculateMonthlyTargetMinutes,
+  formatDuration,
+  getDaysInMonth,
+  splitMinutesToHours,
+} = workTimeUtils
+
 const CUSTOM_HOLIDAYS_KEY = 'customHolidays'
 const EXCLUDED_HOLIDAYS_KEY = 'excludedHolidays'
+const TARGET_TIME_MODE_KEY = 'targetTimeMode'
 
 function getKstToday() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }))
@@ -174,10 +191,18 @@ export default {
   name: 'WorkingHourCalculator',
   data() {
     const today = getKstToday()
+    const targetTimeMode = localStorage.getItem(TARGET_TIME_MODE_KEY) || 'auto'
+    const autoTargetMinutes = calculateMonthlyTargetMinutes(
+      today.getFullYear(),
+      today.getMonth() + 1
+    )
+    const autoTargetTime = splitMinutesToHours(autoTargetMinutes)
+    const storedTargetHours = Number(localStorage.getItem('targetHours')) || 0
+    const storedTargetMinutes = Number(localStorage.getItem('targetMinutes')) || 0
 
     return {
-      targetHours: Number(localStorage.getItem('targetHours')) || 0,
-      targetMinutes: Number(localStorage.getItem('targetMinutes')) || 0,
+      targetHours: targetTimeMode === 'manual' ? storedTargetHours : autoTargetTime.hours,
+      targetMinutes: targetTimeMode === 'manual' ? storedTargetMinutes : autoTargetTime.minutes,
       workedHours: Number(localStorage.getItem('workedHours')) || 0,
       workedMinutes: Number(localStorage.getItem('workedMinutes')) || 0,
       fullDayLeave: Number(localStorage.getItem('fullDayLeave')) || 0,
@@ -190,6 +215,7 @@ export default {
       excludedHolidayDates: parseExcludedHolidayDates(localStorage.getItem(EXCLUDED_HOLIDAYS_KEY)),
       customHolidayDate: formatDate(today),
       customHolidayName: '',
+      targetTimeMode,
     }
   },
   computed: {
@@ -198,6 +224,9 @@ export default {
     },
     currentMonth() {
       return getKstToday().getMonth() + 1
+    },
+    currentMonthDays() {
+      return getDaysInMonth(this.currentYear, this.currentMonth)
     },
     currentMonthName() {
       return formatYearMonth(this.currentYear, this.currentMonth)
@@ -225,6 +254,12 @@ export default {
     currentMonthExcludedHolidays() {
       return filterHolidaysByMonth(DEFAULT_HOLIDAYS, this.currentYear, this.currentMonth)
         .filter((holiday) => this.excludedHolidayDates.includes(holiday.date))
+    },
+    autoTargetMinutes() {
+      return calculateMonthlyTargetMinutes(this.currentYear, this.currentMonth)
+    },
+    autoTargetTimeLabel() {
+      return formatDuration(this.autoTargetMinutes)
     }
   },
   watch: {
@@ -266,6 +301,20 @@ export default {
       const [, month, day] = dateStr.split('-')
 
       return `${Number(month)}월 ${Number(day)}일`
+    },
+
+    applyAutoTargetTime() {
+      const { hours, minutes } = splitMinutesToHours(this.autoTargetMinutes)
+
+      this.targetTimeMode = 'auto'
+      localStorage.setItem(TARGET_TIME_MODE_KEY, this.targetTimeMode)
+      this.targetHours = hours
+      this.targetMinutes = minutes
+    },
+
+    markManualTargetTime() {
+      this.targetTimeMode = 'manual'
+      localStorage.setItem(TARGET_TIME_MODE_KEY, this.targetTimeMode)
     },
 
     saveHolidayOverrides() {
@@ -575,6 +624,40 @@ export default {
   display: flex;
   gap: 10px;
   align-items: center;
+}
+
+.target-helper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  background-color: #fafafa;
+  color: #555;
+  font-size: 13px;
+}
+
+.target-helper span {
+  min-width: 0;
+}
+
+.target-helper small {
+  color: #777;
+}
+
+.target-helper button {
+  flex: 0 0 auto;
+  border: 1px solid #c8d6c8;
+  border-radius: 4px;
+  background-color: #fff;
+  color: #2e7d32;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 5px 8px;
 }
 
 .leave-input {

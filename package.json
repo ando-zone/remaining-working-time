@@ -5,7 +5,7 @@
   "scripts": {
     "serve": "vue-cli-service serve",
     "build": "vue-cli-service build",
-    "test": "node tests/holidays.test.js",
+    "test": "node tests/holidays.test.js && node tests/work-time.test.js",
     "lint": "vue-cli-service lint",
     "deploy": "npm run build && gh-pages -d dist"
   },
