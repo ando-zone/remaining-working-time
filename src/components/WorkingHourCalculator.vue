@@ -429,9 +429,11 @@ export default {
       }
 
       // 하루 평균 근무해야 할 시간 계산
-      const minutesPerDay = remainingMinutes / actualWorkdays
-      const hoursPerDay = Math.floor(minutesPerDay / 60)
-      const minutesRemainder = Math.round(minutesPerDay % 60)
+      const minutesPerDay = Math.round(remainingMinutes / actualWorkdays)
+      const { hours: hoursPerDay, minutes: minutesRemainder } = splitMinutesToHours(minutesPerDay)
+      const dailyWorkTime = minutesRemainder === 0
+        ? `${hoursPerDay}시간`
+        : `${hoursPerDay}시간 ${minutesRemainder}분`
 
       // 남은 공휴일 찾기
       const remainingHolidays = []
@@ -450,7 +452,7 @@ export default {
 
       const includeTodayText = this.includeToday ? '오늘을 포함하여' : ''
 
-      const resultMessage = `${today.getFullYear()}년 ${today.getMonth() + 1}월 목표 달성을 위해 \n${includeTodayText} 남은 <strong>${actualWorkdays} 근무일</strong> 동안\n매일 <strong>${hoursPerDay}시간 ${minutesRemainder}분</strong>씩 근무해야 합니다.${holidayText}`
+      const resultMessage = `${today.getFullYear()}년 ${today.getMonth() + 1}월 목표 달성을 위해 \n${includeTodayText} 남은 <strong>${actualWorkdays} 근무일</strong> 동안\n매일 <strong>${dailyWorkTime}</strong>씩 근무해야 합니다.${holidayText}`
       
       this.result = ''  // 결과를 잠시 비웠다가
       setTimeout(() => {  // 다음 틱에 다시 설정
